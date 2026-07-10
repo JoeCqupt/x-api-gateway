@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: x-api-gateway
+  labels:
+    app: x-api-gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: x-api-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: x-api-gateway
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: gateway
+          image: x-api-gateway:latest
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: admin
+          resources:
+            requests:
+              cpu: "2"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "4Gi"
+          env:
+            - name: JAVA_OPTS
+              value: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -XX:+AlwaysPreTouch"
+          livenessProbe:
+            httpGet:
+              path: /admin/health
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin/ready
+              port: admin
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: x-api-gateway
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+    - port: 9090
+      targetPort: 9090
+      name: admin
+  selector:
+    app: x-api-gateway

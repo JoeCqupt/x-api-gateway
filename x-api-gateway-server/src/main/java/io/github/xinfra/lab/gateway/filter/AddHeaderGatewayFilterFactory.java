@@ -1,10 +1,12 @@
 package io.github.xinfra.lab.gateway.filter;
 
+import io.github.xinfra.lab.gateway.annotations.Order;
 import io.github.xinfra.lab.gateway.commons.AbstractConfigurable;
 import reactor.netty.http.server.HttpServerRequest;
 
 import java.util.Map;
 
+@Order(-30)
 public class AddHeaderGatewayFilterFactory extends
         AbstractConfigurable<Map<String, String>>
         implements GatewayFilterFactory<Map<String, String>> {

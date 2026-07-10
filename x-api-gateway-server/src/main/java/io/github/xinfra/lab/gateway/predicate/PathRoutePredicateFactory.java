@@ -3,7 +3,6 @@ package io.github.xinfra.lab.gateway.predicate;
 import io.github.xinfra.lab.gateway.commons.AbstractConfigurable;
 import io.github.xinfra.lab.gateway.server.ServerWebExchange;
 import lombok.Data;
-import reactor.core.publisher.Mono;
 
 import java.util.regex.Pattern;
 
@@ -25,11 +24,7 @@ public class PathRoutePredicateFactory
     @Override
     public RoutePredicate<ServerWebExchange> apply(PatternConfig config) {
         Pattern p = Pattern.compile(config.getPattern());
-
-        return exchange -> {
-            String path = exchange.getRequest().path();
-            return Mono.just(p.matcher(path).matches());
-        };
+        return exchange -> p.matcher(exchange.getRequest().fullPath()).matches();
     }
 
     @Data

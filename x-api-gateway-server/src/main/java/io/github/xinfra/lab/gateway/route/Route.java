@@ -5,7 +5,9 @@ import io.github.xinfra.lab.gateway.filter.GatewayFilter;
 import io.github.xinfra.lab.gateway.predicate.RoutePredicate;
 import io.github.xinfra.lab.gateway.server.ServerWebExchange;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 public interface Route {
 
@@ -16,4 +18,8 @@ public interface Route {
     List<GatewayFilter> getFilters();
 
     Endpoint getEndpoint();
+
+    default Map<String, Object> getMetadata() {
+        return Collections.emptyMap();
+    }
 }

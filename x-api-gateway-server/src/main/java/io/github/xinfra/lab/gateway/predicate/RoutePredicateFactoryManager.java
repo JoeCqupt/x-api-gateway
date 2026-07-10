@@ -26,6 +26,14 @@ public class RoutePredicateFactoryManager {
         return factoryMap.get(name);
     }
 
+    public void register(String name, RoutePredicateFactory factory) {
+        factoryMap.put(name, factory);
+    }
+
+    public Map<String, RoutePredicateFactory> getFactoryMap() {
+        return factoryMap;
+    }
+
     public void scan(String packageName) {
         Reflections reflections = new Reflections(packageName);
         Set<Class<? extends RoutePredicateFactory>> subTypes = reflections.getSubTypesOf(RoutePredicateFactory.class);

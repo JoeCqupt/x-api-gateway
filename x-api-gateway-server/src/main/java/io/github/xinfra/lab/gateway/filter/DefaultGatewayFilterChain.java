@@ -6,17 +6,17 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 public class DefaultGatewayFilterChain implements GatewayFilterChain {
-    private List<GatewayFilter> filters;
+    private final GatewayFilter[] filters;
     private int index = 0;
 
     public DefaultGatewayFilterChain(List<GatewayFilter> filters) {
-        this.filters = filters;
+        this.filters = filters.toArray(new GatewayFilter[0]);
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange) {
-        if (index < filters.size()) {
-            return filters.get(index++).filter(exchange, this);
+        if (index < filters.length) {
+            return filters[index++].filter(exchange, this);
         } else {
             return Mono.empty();
         }

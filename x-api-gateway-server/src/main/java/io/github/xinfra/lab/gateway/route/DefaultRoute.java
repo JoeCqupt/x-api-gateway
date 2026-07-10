@@ -8,7 +8,9 @@ import io.github.xinfra.lab.gateway.predicate.RoutePredicate;
 import io.github.xinfra.lab.gateway.server.ServerWebExchange;
 import lombok.Data;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class DefaultRoute implements Route, Ordered {
@@ -22,6 +24,8 @@ public class DefaultRoute implements Route, Ordered {
     private Endpoint endpoint;
 
     private int order = Ordered.LOWEST_PRECEDENCE;
+
+    private Map<String, Object> metadata = Collections.emptyMap();
 
     @Override
     public String getId() {

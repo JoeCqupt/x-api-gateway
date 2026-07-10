@@ -8,7 +8,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @AllArgsConstructor
@@ -19,4 +21,5 @@ public class RouteDefinition {
     private List<GatewayFilterDefinition> filters;
     private EndpointDefinition endpoint;
     private int order;
+    private Map<String, Object> metadata = Collections.emptyMap();
 }

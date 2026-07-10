@@ -23,6 +23,14 @@ public class GatewayFilterFactoryManager {
         return factoryMap.get(name);
     }
 
+    public void register(String name, GatewayFilterFactory factory) {
+        factoryMap.put(name, factory);
+    }
+
+    public Map<String, GatewayFilterFactory> getFactoryMap() {
+        return factoryMap;
+    }
+
     public void scan(String packageName) {
         Reflections reflections = new Reflections(packageName);
         Set<Class<? extends GatewayFilterFactory>> subTypes = reflections.getSubTypesOf(GatewayFilterFactory.class);

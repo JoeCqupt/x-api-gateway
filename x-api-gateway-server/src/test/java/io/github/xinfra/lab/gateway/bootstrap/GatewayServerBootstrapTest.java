@@ -29,11 +29,11 @@ public class GatewayServerBootstrapTest extends BaseTest {
         RouteLocator routeLocator =
                 RouteLocatorBuilder.builder()
                         .route("test-http",
-                                routePredicateSpec -> routePredicateSpec.path("/test")
+                                routePredicateSpec -> routePredicateSpec.path("/test.*")
                                         .negate()
                                         .filters()
                                         .endpoint()
-                                        .http(Lists.newArrayList("http://127.0.0.1:9999/helloworld", "http://localhost:9999/helloworld"),
+                                        .http(Lists.newArrayList("http://127.0.0.1:9999"),
                                                 Lists.newArrayList())
                         )
                         .build();

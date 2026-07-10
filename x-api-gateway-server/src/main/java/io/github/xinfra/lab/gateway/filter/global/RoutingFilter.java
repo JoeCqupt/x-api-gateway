@@ -1,5 +1,6 @@
 package io.github.xinfra.lab.gateway.filter.global;
 
+import io.github.xinfra.lab.gateway.commons.Ordered;
 import io.github.xinfra.lab.gateway.endpoint.Endpoint;
 import io.github.xinfra.lab.gateway.filter.GatewayFilterChain;
 import io.github.xinfra.lab.gateway.route.Route;
@@ -10,7 +11,13 @@ import static io.github.xinfra.lab.gateway.commons.ServerWebExchangeUtils.GATEWA
 import static io.github.xinfra.lab.gateway.commons.ServerWebExchangeUtils.isAlreadyRouted;
 import static io.github.xinfra.lab.gateway.commons.ServerWebExchangeUtils.setAlreadyRouted;
 
-public class RoutingFilter implements GlobalGatewayFilter {
+public class RoutingFilter implements GlobalGatewayFilter, Ordered {
+
+    @Override
+    public int getOrder() {
+        return 200;
+    }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         if (isAlreadyRouted(exchange)) {

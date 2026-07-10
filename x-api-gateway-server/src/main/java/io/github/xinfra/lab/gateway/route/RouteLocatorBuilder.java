@@ -9,13 +9,19 @@ import io.github.xinfra.lab.gateway.filter.AddHeaderGatewayFilterFactory;
 import io.github.xinfra.lab.gateway.filter.GatewayFilter;
 import io.github.xinfra.lab.gateway.filter.GatewayFilterFactory;
 import io.github.xinfra.lab.gateway.filter.GatewayFilterFactoryManager;
+import io.github.xinfra.lab.gateway.predicate.HeaderRoutePredicateFactory;
+import io.github.xinfra.lab.gateway.predicate.HostRoutePredicateFactory;
+import io.github.xinfra.lab.gateway.predicate.MethodRoutePredicateFactory;
 import io.github.xinfra.lab.gateway.predicate.PathRoutePredicateFactory;
+import io.github.xinfra.lab.gateway.predicate.QueryRoutePredicateFactory;
 import io.github.xinfra.lab.gateway.predicate.RoutePredicate;
 import io.github.xinfra.lab.gateway.predicate.RoutePredicateFactoryManager;
 import io.github.xinfra.lab.gateway.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -71,21 +77,73 @@ public class RouteLocatorBuilder {
         public BooleanSpec path(String pattern) {
             PathRoutePredicateFactory.PatternConfig config = new PathRoutePredicateFactory.PatternConfig();
             config.setPattern(pattern);
-            RoutePredicate predicate = RoutePredicateFactoryManager.INSTANCE.lookup(PathRoutePredicateFactory.NAME)
+            RoutePredicate<ServerWebExchange> predicate = RoutePredicateFactoryManager.INSTANCE
+                    .lookup(PathRoutePredicateFactory.NAME)
                     .apply(config);
+            return applyPredicate(predicate);
+        }
+
+        public BooleanSpec method(String... methods) {
+            MethodRoutePredicateFactory.Config config = new MethodRoutePredicateFactory.Config();
+            config.setMethods(Arrays.asList(methods));
+            RoutePredicate<ServerWebExchange> predicate = RoutePredicateFactoryManager.INSTANCE
+                    .lookup(MethodRoutePredicateFactory.NAME)
+                    .apply(config);
+            return applyPredicate(predicate);
+        }
+
+        public BooleanSpec header(String name, String regex) {
+            HeaderRoutePredicateFactory.Config config = new HeaderRoutePredicateFactory.Config();
+            config.setName(name);
+            config.setRegex(regex);
+            RoutePredicate<ServerWebExchange> predicate = RoutePredicateFactoryManager.INSTANCE
+                    .lookup(HeaderRoutePredicateFactory.NAME)
+                    .apply(config);
+            return applyPredicate(predicate);
+        }
+
+        public BooleanSpec header(String name) {
+            return header(name, null);
+        }
+
+        public BooleanSpec host(String... patterns) {
+            HostRoutePredicateFactory.Config config = new HostRoutePredicateFactory.Config();
+            config.setPatterns(Arrays.asList(patterns));
+            RoutePredicate<ServerWebExchange> predicate = RoutePredicateFactoryManager.INSTANCE
+                    .lookup(HostRoutePredicateFactory.NAME)
+                    .apply(config);
+            return applyPredicate(predicate);
+        }
+
+        public BooleanSpec query(String param, String regex) {
+            QueryRoutePredicateFactory.Config config = new QueryRoutePredicateFactory.Config();
+            config.setParam(param);
+            config.setRegex(regex);
+            RoutePredicate<ServerWebExchange> predicate = RoutePredicateFactoryManager.INSTANCE
+                    .lookup(QueryRoutePredicateFactory.NAME)
+                    .apply(config);
+            return applyPredicate(predicate);
+        }
+
+        public BooleanSpec query(String param) {
+            return query(param, null);
+        }
+
+        private BooleanSpec applyPredicate(RoutePredicate<ServerWebExchange> predicate) {
             if (operator != null) {
                 switch (operator) {
                     case AND:
                         routeSpec.predicate = routeSpec.predicate.and(predicate);
+                        break;
                     case OR:
                         routeSpec.predicate = routeSpec.predicate.or(predicate);
+                        break;
                 }
             } else {
                 routeSpec.predicate = predicate;
             }
             return new BooleanSpec(routeSpec);
         }
-
     }
 
     public static class BooleanSpec {
@@ -111,11 +169,14 @@ public class RouteLocatorBuilder {
         public GatewayFilterSpec filters() {
             return new GatewayFilterSpec(routeSpec);
         }
+
+        public EndpointSpec endpoint() {
+            return new EndpointSpec(routeSpec);
+        }
     }
 
     public static class GatewayFilterSpec {
         private RouteSpec routeSpec;
-
 
         public GatewayFilterSpec(RouteSpec routeSpec) {
             this.routeSpec = routeSpec;
@@ -125,6 +186,11 @@ public class RouteLocatorBuilder {
             GatewayFilterFactory gatewayFilterFactory = GatewayFilterFactoryManager.INSTANCE
                     .lookup(AddHeaderGatewayFilterFactory.NAME);
             GatewayFilter filter = gatewayFilterFactory.apply(headers);
+            routeSpec.gatewayFilterList.add(filter);
+            return this;
+        }
+
+        public GatewayFilterSpec filter(GatewayFilter filter) {
             routeSpec.gatewayFilterList.add(filter);
             return this;
         }
@@ -150,13 +216,16 @@ public class RouteLocatorBuilder {
                     .lookup(HttpEndpointFactory.NAME)
                     .apply(config);
 
-            // TODO add validate
             DefaultRoute route = new DefaultRoute();
             route.setEndpoint(routeSpec.endpoint);
             route.setFilters(routeSpec.gatewayFilterList);
             route.setPredicate(routeSpec.predicate);
             route.setId(routeSpec.id);
             return route;
+        }
+
+        public Route http(String url) {
+            return http(Collections.singletonList(url), Collections.emptyList());
         }
     }
 

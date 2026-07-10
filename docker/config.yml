@@ -1,0 +1,38 @@
+server:
+  port: 8080
+  shutdownTimeoutMs: 30000
+  http2Enabled: false
+  bossThreads: 1
+  workerThreads: 0
+  maxContentLength: 10485760
+  backlog: 1024
+  tcpNoDelay: true
+  soKeepAlive: true
+
+admin:
+  enabled: true
+  port: 9090
+  # IMPORTANT: set a strong access token before deploying to production
+  accessToken: ""
+
+healthCheck:
+  enabled: true
+  intervalMs: 10000
+  path: /health
+  unhealthyThreshold: 3
+  healthyThreshold: 2
+  timeoutMs: 3000
+
+upstream:
+  connectTimeout: 3000
+  readTimeout: 10000
+  poolMaxConnections: 256
+  poolMaxIdleTime: 60000
+  poolMaxLifeTime: 300000
+  poolEvictionInterval: 30000
+
+plugins:
+  enabled: false
+  pluginsDir: plugins
+
+routes: []

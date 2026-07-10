@@ -5,7 +5,9 @@ import com.google.common.collect.Maps;
 import io.github.xinfra.lab.gateway.BaseTest;
 import io.github.xinfra.lab.gateway.bootstrap.GatewayServerBootstrap;
 import io.github.xinfra.lab.gateway.common.TestSocketUtils;
-import io.github.xinfra.lab.gateway.route.Route;
+import io.github.xinfra.lab.gateway.discovery.ServiceInstance;
+import io.github.xinfra.lab.gateway.discovery.StaticServiceDiscovery;
+import io.github.xinfra.lab.gateway.loadbalance.UpstreamTarget;
 import io.github.xinfra.lab.gateway.route.RouteLocator;
 import io.github.xinfra.lab.gateway.route.RouteLocatorBuilder;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -18,8 +20,7 @@ import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.client.HttpClientResponse;
 import reactor.netty.http.server.HttpServer;
 
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -28,56 +29,64 @@ import java.util.Map;
 public class HttpEndpointTest extends BaseTest {
 
     @Test
-    public void httpEndpointFileConfigTest() throws MalformedURLException {
+    public void httpEndpointFileConfigTest() {
 
+        int httpServerPort = TestSocketUtils.findAvailableTcpPort();
         int gatewayServerPort = TestSocketUtils.findAvailableTcpPort();
 
-        String path = Thread.currentThread()
-                .getContextClassLoader()
-                .getResource("httptest.yml").getPath().toString();
-
-        GatewayServerBootstrap bootstrap = startGatewayServer(gatewayServerPort, path);
-        log.info("gatewayServer started.");
-
-        List<Route> routeList = bootstrap.getRouteLocator().getRoutes().collectList().block();
-        Route route = routeList.stream()
-                .filter(r -> r.getId().equals("http-test"))
-                .findFirst()
-                .get();
-
-        HttpEndpoint endpoint = (HttpEndpoint) route.getEndpoint();
-        String urlStr = endpoint.getConfig().getUrls().get(0);
-        URL url = new URL(urlStr);
-
-        // start httpEndpoint
-        int httpServerPort = url.getPort();
+        // start upstream httpServer first
         DisposableServer httpServer = HttpServer.create()
                 .port(httpServerPort)
                 .route(routes ->
-                        routes.get("/helloworld",
-                                (httpServerRequest, httpServerResponse) -> {
-                                    System.out.println(httpServerRequest);
-                                    return httpServerResponse.sendString(Mono.just("hello world!"));
-                                })
+                        routes.get("/hello",
+                                (httpServerRequest, httpServerResponse) ->
+                                        httpServerResponse.sendString(Mono.just("hello world!")))
                 ).bind().block();
-        log.info("httpServer started.");
+        log.info("httpServer started on port {}", httpServerPort);
 
+        // update config to use dynamic port
+        String configContent = "routes:\n" +
+                "  - id: http-test\n" +
+                "    predicates:\n" +
+                "      - name: Path\n" +
+                "        config: 'pattern: /hello.*'\n" +
+                "    filters:\n" +
+                "      - name: AddHeader\n" +
+                "        config: 'proxy: x-api-gateway'\n" +
+                "    endpoint:\n" +
+                "      name: Http\n" +
+                "      config: |\n" +
+                "        urls:\n" +
+                "          - http://127.0.0.1:" + httpServerPort + "\n";
 
+        java.io.File tempFile;
+        try {
+            tempFile = java.io.File.createTempFile("gateway-test", ".yml");
+            tempFile.deleteOnExit();
+            java.nio.file.Files.write(tempFile.toPath(), configContent.getBytes());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        GatewayServerBootstrap bootstrap = startGatewayServer(gatewayServerPort, tempFile.getAbsolutePath());
+        log.info("gatewayServer started on port {}", gatewayServerPort);
+
+        // test direct access to upstream
         HttpClientResponse response = HttpClient.create()
                 .get()
-                .uri(String.format("http://localhost:%s/helloworld", httpServerPort))
+                .uri(String.format("http://localhost:%s/hello", httpServerPort))
                 .response()
                 .block();
-        Assert.assertEquals(response.status(), HttpResponseStatus.OK);
+        Assert.assertEquals(HttpResponseStatus.OK, response.status());
         log.info("httpclient request httpServer success.");
 
-
+        // test access via gateway
         response = HttpClient.create()
                 .get()
                 .uri(String.format("http://localhost:%s/hello", gatewayServerPort))
                 .response()
                 .block();
-        Assert.assertEquals(response.status(), HttpResponseStatus.OK);
+        Assert.assertEquals(HttpResponseStatus.OK, response.status());
         log.info("httpclient request gatewayServer success.");
 
         httpServer.disposeNow();
@@ -85,68 +94,144 @@ public class HttpEndpointTest extends BaseTest {
     }
 
     @Test
-    public void httpEndpointApiConfigTest() throws MalformedURLException {
+    public void httpEndpointApiConfigTest() {
+
+        int httpServerPort = TestSocketUtils.findAvailableTcpPort();
+        int gatewayServerPort = TestSocketUtils.findAvailableTcpPort();
+
+        // start upstream httpServer first
+        DisposableServer httpServer = HttpServer.create()
+                .port(httpServerPort)
+                .route(routes ->
+                        routes.get("/hello",
+                                (httpServerRequest, httpServerResponse) ->
+                                        httpServerResponse.sendString(Mono.just("hello world!")))
+                ).bind().block();
+        log.info("httpServer started on port {}", httpServerPort);
+
         Map<String, String> addHeadersMap = Maps.newHashMap();
         addHeadersMap.put("proxy", "x-api-gateway");
 
         RouteLocator routeLocator = RouteLocatorBuilder.builder()
                 .route("http-test",
                         routePredicateSpec ->
-                                routePredicateSpec.path("hello")
+                                routePredicateSpec.path("/hello.*")
                                         .filters()
                                         .addHeader(addHeadersMap)
                                         .endpoint()
-                                        .http(Lists.newArrayList("http://127.0.0.1:9999/helloworld", "http://localhost:9999/helloworld"),
+                                        .http(Lists.newArrayList("http://127.0.0.1:" + httpServerPort),
                                                 Lists.newArrayList())
                 ).build();
 
-
-        int gatewayServerPort = TestSocketUtils.findAvailableTcpPort();
         GatewayServerBootstrap bootstrap = startGatewayServer(gatewayServerPort, routeLocator);
-        log.info("gatewayServer started.");
+        log.info("gatewayServer started on port {}", gatewayServerPort);
 
-        List<Route> routeList = bootstrap.getRouteLocator().getRoutes().collectList().block();
-        Route route = routeList.stream()
-                .filter(r -> r.getId().equals("http-test"))
-                .findFirst()
-                .get();
-
-        HttpEndpoint endpoint = (HttpEndpoint) route.getEndpoint();
-        String urlStr = endpoint.getConfig().getUrls().get(0);
-        URL url = new URL(urlStr);
-
-        // start httpEndpoint
-        int httpServerPort = url.getPort();
-        DisposableServer httpServer = HttpServer.create()
-                .port(httpServerPort)
-                .route(routes ->
-                        routes.get("/helloworld",
-                                (httpServerRequest, httpServerResponse) -> {
-                                    System.out.println(httpServerRequest);
-                                    return httpServerResponse.sendString(Mono.just("hello world!"));
-                                })
-                ).bind().block();
-        log.info("httpServer started.");
-
-
+        // test direct access to upstream
         HttpClientResponse response = HttpClient.create()
                 .get()
-                .uri(String.format("http://localhost:%s/helloworld", httpServerPort))
+                .uri(String.format("http://localhost:%s/hello", httpServerPort))
                 .response()
                 .block();
-        Assert.assertEquals(response.status(), HttpResponseStatus.OK);
+        Assert.assertEquals(HttpResponseStatus.OK, response.status());
         log.info("httpclient request httpServer success.");
 
-
+        // test access via gateway
         response = HttpClient.create()
                 .get()
                 .uri(String.format("http://localhost:%s/hello", gatewayServerPort))
                 .response()
                 .block();
-        Assert.assertEquals(response.status(), HttpResponseStatus.OK);
+        Assert.assertEquals(HttpResponseStatus.OK, response.status());
         log.info("httpclient request gatewayServer success.");
 
         httpServer.disposeNow();
         bootstrap.stop();
+    }
+
+    @Test
+    public void testHttpEndpointWithServiceDiscovery() {
+        StaticServiceDiscovery discovery = new StaticServiceDiscovery();
+        ServiceInstance inst1 = new ServiceInstance("inst-1", "host1", 8080);
+        ServiceInstance inst2 = new ServiceInstance("inst-2", "host2", 9090);
+        discovery.registerInstances("my-service", Arrays.asList(inst1, inst2));
+
+        HttpEndpoint.Config config = new HttpEndpoint.Config();
+        config.setServiceId("my-service");
+        config.setLoadBalancer("Random");
+
+        HttpEndpoint endpoint = new HttpEndpoint(config, discovery);
+        List<UpstreamTarget> targets = endpoint.getTargets();
+
+        Assert.assertEquals(2, targets.size());
+        Assert.assertEquals("http://host1:8080", targets.get(0).getUrl());
+        Assert.assertEquals("http://host2:9090", targets.get(1).getUrl());
+    }
+
+    @Test
+    public void testHttpEndpointServiceDiscoverySubscribeUpdates() {
+        StaticServiceDiscovery discovery = new StaticServiceDiscovery();
+        ServiceInstance inst1 = new ServiceInstance("inst-1", "host1", 8080);
+        discovery.registerInstances("dynamic-service", Arrays.asList(inst1));
+
+        HttpEndpoint.Config config = new HttpEndpoint.Config();
+        config.setServiceId("dynamic-service");
+        config.setLoadBalancer("Random");
+
+        HttpEndpoint endpoint = new HttpEndpoint(config, discovery);
+        Assert.assertEquals(1, endpoint.getTargets().size());
+
+        ServiceInstance inst2 = new ServiceInstance("inst-2", "host2", 9090);
+        ServiceInstance inst3 = new ServiceInstance("inst-3", "host3", 7070);
+        discovery.registerInstances("dynamic-service", Arrays.asList(inst2, inst3));
+
+        Assert.assertEquals(2, endpoint.getTargets().size());
+        Assert.assertEquals("http://host2:9090", endpoint.getTargets().get(0).getUrl());
+        Assert.assertEquals("http://host3:7070", endpoint.getTargets().get(1).getUrl());
+    }
+
+    @Test
+    public void testHttpEndpointServiceDiscoveryFiltersUnhealthy() {
+        StaticServiceDiscovery discovery = new StaticServiceDiscovery();
+        ServiceInstance healthy = new ServiceInstance("h-1", "host1", 8080);
+        ServiceInstance unhealthy = new ServiceInstance("u-1", "host2", 9090);
+        unhealthy.setHealthy(false);
+        discovery.registerInstances("mixed-service", Arrays.asList(healthy, unhealthy));
+
+        HttpEndpoint.Config config = new HttpEndpoint.Config();
+        config.setServiceId("mixed-service");
+
+        HttpEndpoint endpoint = new HttpEndpoint(config, discovery);
+        Assert.assertEquals(1, endpoint.getTargets().size());
+        Assert.assertEquals("http://host1:8080", endpoint.getTargets().get(0).getUrl());
+    }
+
+    @Test
+    public void testHttpEndpointFallbackToUrlsWhenNoDiscovery() {
+        HttpEndpoint.Config config = new HttpEndpoint.Config();
+        config.setServiceId("my-service");
+        config.setUrls(Arrays.asList("http://fallback:8080"));
+
+        HttpEndpoint endpoint = new HttpEndpoint(config);
+        Assert.assertEquals(1, endpoint.getTargets().size());
+        Assert.assertEquals("http://fallback:8080", endpoint.getTargets().get(0).getUrl());
+    }
+
+    @Test
+    public void testHttpEndpointFactoryWithServiceDiscovery() {
+        StaticServiceDiscovery discovery = new StaticServiceDiscovery();
+        ServiceInstance inst = new ServiceInstance("inst-1", "host1", 8080);
+        discovery.registerInstances("factory-service", Arrays.asList(inst));
+
+        HttpEndpointFactory factory = new HttpEndpointFactory();
+        factory.setServiceDiscovery(discovery);
+
+        HttpEndpoint.Config config = new HttpEndpoint.Config();
+        config.setServiceId("factory-service");
+
+        Endpoint endpoint = factory.apply(config);
+        Assert.assertTrue(endpoint instanceof HttpEndpoint);
+        HttpEndpoint httpEndpoint = (HttpEndpoint) endpoint;
+        Assert.assertEquals(1, httpEndpoint.getTargets().size());
+        Assert.assertEquals("http://host1:8080", httpEndpoint.getTargets().get(0).getUrl());
     }
 }
